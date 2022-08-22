@@ -1,4 +1,6 @@
 .DS_Store
 *.o
+*.tab.c
 *.tab.h
+*.yy.c
 rpn
