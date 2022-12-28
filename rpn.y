@@ -14,23 +14,23 @@
 
 %%
 
-input:
-     %empty
-     | input line
-     ;
+input
+  : %empty
+  | input line
+  ;
 
-line:
-    '\n'
-    | exp '\n'        { printf("= %.10g\n", $1); }
-    ;
+line
+  : '\n'
+  | exp '\n'        { printf("= %.10g\n", $1); }
+  ;
 
-exp:
-   NUM
-   | exp exp '+'   { $$ = $1 + $2; }
-   | exp exp '-'   { $$ = $1 - $2; }
-   | exp exp '^'   { $$ = pow($1, $2); }
-   | exp 'n'       { $$ = -$1; }
-   ;
+exp
+  : NUM
+  | exp exp '+'   { $$ = $1 + $2; }
+  | exp exp '-'   { $$ = $1 - $2; }
+  | exp exp '^'   { $$ = pow($1, $2); }
+  | exp 'n'       { $$ = -$1; }
+  ;
 
 %%
 
