@@ -6,7 +6,7 @@ YACC = bison # v3 required
 all: $(PROJ)
 
 $(PROJ): $(PROJ).tab.o lex.yy.o
-	$(CC) -o $(PROJ) *.o
+	$(CC) -o $(PROJ) *.o -lm
 
 %.tab.o: %.tab.c
 
