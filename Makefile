@@ -13,7 +13,7 @@ $(PROJ): $(PROJ).tab.o lex.yy.o
 %.tab.c %.tab.h: %.y
 	$(YACC) -d $<
 
-lex.yy.o: lex.yy.c rpn.tab.h
+lex.yy.o: lex.yy.c rpn.tab.h ast.o
 
 lex.yy.c: rpn.l
 	flex $<
