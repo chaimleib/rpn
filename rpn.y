@@ -1,6 +1,5 @@
 %{
 #include <stdio.h>
-#include <math.h>
 #include "ast.h"
 
 int yylex(void);
