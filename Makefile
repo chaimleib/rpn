@@ -15,6 +15,8 @@ $(PROJ): $(PROJ).tab.o lex.yy.o
 
 lex.yy.o: lex.yy.c rpn.tab.h ast.o
 
+ast.o: astring.o
+
 lex.yy.c: rpn.l
 	flex $<
 
