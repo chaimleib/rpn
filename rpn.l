@@ -6,6 +6,9 @@
   int getDouble(void);
 %}
 
+%option nounput
+%option noinput
+
 %%
 
 [ \t]+                     ;
