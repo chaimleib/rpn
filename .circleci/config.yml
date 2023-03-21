@@ -8,7 +8,7 @@ jobs:
       - checkout
       - run:
           name: Install SonarCloud dependencies
-          command: 'apk add curl bash unzip'
+          command: 'apk add curl bash unzip java'
       - sonarcloud/scan
       - run:
           name: Install dependencies
