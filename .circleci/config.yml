@@ -7,7 +7,10 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install dependencies and build project
+          name: Install dependencies
+          command: 'apt install -y bison flex'
+      - run:
+          name: Build project
           command: 'make'
       - sonarcloud/scan
 
