@@ -8,7 +8,7 @@ jobs:
       - checkout
       - run:
           name: Install dependencies
-          command: 'apt install -y bison flex'
+          command: 'sudo apt install -y bison flex'
       - run:
           name: Build project
           command: 'make'
