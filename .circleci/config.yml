@@ -6,10 +6,13 @@ jobs:
       - image: 'alpine:latest'
     steps:
       - checkout
+      - run:
+          name: Install SonarCloud dependencies
+          command: 'sudo apk add curl bash'
       - sonarcloud/scan
       - run:
           name: Install dependencies
-          command: 'sudo apt install -y build-base'
+          command: 'sudo apk add build-base'
       - run:
           name: Build project
           command: 'make'
