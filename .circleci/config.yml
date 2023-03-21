@@ -8,11 +8,11 @@ jobs:
       - checkout
       - run:
           name: Install SonarCloud dependencies
-          command: 'sudo apk add curl bash'
+          command: 'apk add curl bash'
       - sonarcloud/scan
       - run:
           name: Install dependencies
-          command: 'sudo apk add build-base'
+          command: 'apk add build-base'
       - run:
           name: Build project
           command: 'make'
