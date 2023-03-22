@@ -18,7 +18,7 @@ jobs:
 
       - run:
           name: Install project dependencies
-          command: 'sudo apt install -y flex bison'
+          command: 'apt install -y flex bison'
       - run:
           name: Build project
           command: '/bw/build-wrapper-linux-x86-64 --out-dir /bw/out make clean all'
