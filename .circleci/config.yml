@@ -6,16 +6,23 @@ jobs:
       - image: 'node:latest'
     steps:
       - checkout
-      # - run:
-      #     name: Install SonarCloud dependencies
-      #     command: 'apk add curl bash unzip openjdk8'
-      - sonarcloud/scan
+      - run:
+          name: Install SonarCloud C dependencies
+          command: |
+            set -ex
+            sudo mkdir -p /bw/out
+            sudo chown -R $USER:$USER /bw
+            cd /bw
+            curl -L https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
+            unzip build-wrapper-linux-x86.zip
+
       # - run:
       #     name: Install dependencies
       #     command: 'sudo apt install -y build-essential'
       - run:
           name: Build project
-          command: 'make'
+          command: '/bw/build-wrapper-linux-x86-64 --out-dir /bw/out make clean all'
+      - sonarcloud/scan
 
 orbs:
   sonarcloud: sonarsource/sonarcloud@1.1.1
