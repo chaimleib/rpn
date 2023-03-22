@@ -25,8 +25,10 @@ stack* mkstack() {
   self->cap = 16;
   self->len = 0;
   self->store = calloc(sizeof(node *), self->cap);
-  if (self->store == NULL)
+  if (self->store == NULL) {
+    free(self);
     return nomem("mkstack(): ");
+  }
   return self;
 }
 
@@ -76,11 +78,21 @@ char *ast2str(node *root) {
   tmp = calloc(sizeof(char), tmpCap);
   indent = calloc(sizeof(char), indentCap);
   nesting = calloc(sizeof(int), nestingCap);
-  if (result == NULL || tmp == NULL || indent == NULL || nesting == NULL)
+  if (result == NULL || tmp == NULL || indent == NULL || nesting == NULL) {
+    smartfree(result, tmp, indent, nesting);
     return nomem("ast2str(): init: ");
+  }
 
   s = mkstack();
-  if (push(s, root)) return nomem("ast2str(): stackinit: ");
+  if (s == NULL) {
+    smartfree(result, tmp, indent, nesting);
+    return nomem("ast2str(): stackinit: ");
+  }
+  if (push(s, root)) {
+    free_stack(s);
+    smartfree(result, tmp, indent, nesting);
+    return nomem("ast2str(): stackinit: ");
+  }
 
   while ((n = pop(s))) {
     switch (n->type) {
@@ -92,17 +104,26 @@ char *ast2str(node *root) {
         // tap the line
         indentLen-=2; // overwrite last 2 chars
         if (!astrcat(&indent, &indentCap, &indentLen,
-                     nesting[nestingLen-1]>1 ? "+-" : "\\-", strlen("+-")))
+                     nesting[nestingLen-1]>1 ? "+-" : "\\-", strlen("+-"))) {
+          free_stack(s);
+          smartfree(result, tmp, indent, nesting);
           return nomem("ast2str(): NUM.pre.indent: ");
+        }
       }
       // ensure tmp always has enough storage
       l = snprintf(NULL, 0, "%sNUM %0.2f\n", indent, n->d);
       if (!(tmpCap = checkRealloc(
-          (void **)&tmp, tmpCap, sizeof(char), l+1)))
+          (void **)&tmp, tmpCap, sizeof(char), l+1))) {
+        free_stack(s);
+        smartfree(result, tmp, indent, nesting);
         return nomem("ast2str(): NUM.tmp.cr: ");
+      }
       tmpLen = snprintf(tmp, l+1, "%sNUM %0.2f\n", indent, n->d);
-      if (!astrcat(&result, &resultCap, &resultLen, tmp, tmpLen))
+      if (!astrcat(&result, &resultCap, &resultLen, tmp, tmpLen)) {
+        free_stack(s);
+        smartfree(result, tmp, indent, nesting);
         return nomem("ast2str(): NUM.result: ");
+      }
       // update nesting
       if (nestingLen) {
         l = --nesting[nestingLen-1];
@@ -122,11 +143,17 @@ char *ast2str(node *root) {
     case 'n':
       // build next line in tmp
       l = indentLen + strlen("op: 'x'\n");
-      if (!(tmpCap = checkRealloc((void **)&tmp, tmpCap, sizeof(char), l+1)))
+      if (!(tmpCap = checkRealloc((void **)&tmp, tmpCap, sizeof(char), l+1))) {
+        free_stack(s);
+        smartfree(result, tmp, indent, nesting);
         return nomem("ast2str(): op.tmp: ");
+      }
       tmpLen = snprintf(tmp, l+1, "%sop: '%c'\n", indent, n->type);
-      if (!astrcat(&result, &resultCap, &resultLen, tmp, tmpLen))
+      if (!astrcat(&result, &resultCap, &resultLen, tmp, tmpLen)) {
+        free_stack(s);
+        smartfree(result, tmp, indent, nesting);
         return nomem("ast2str(): op.result: ");
+      }
       // decrement expected siblings, if applicable
       if (nestingLen) {
         l = --nesting[nestingLen-1];
@@ -138,28 +165,37 @@ char *ast2str(node *root) {
       }
       // children to follow!
       if (!(nestingCap = checkRealloc(
-          (void **)&nesting, nestingCap, sizeof(int), ++nestingLen)))
+          (void **)&nesting, nestingCap, sizeof(int), ++nestingLen))) {
+        free_stack(s);
+        smartfree(result, tmp, indent, nesting);
         return nomem("ast2str(): op.nesting: ");
+      }
       for (int i=2; i>=0; i--) { // count args and increment expected children
         if (!n->arg[i]) continue;
-        if (push(s, n->arg[i]))
+        if (push(s, n->arg[i])) {
+          free_stack(s);
+          smartfree(result, tmp, indent, nesting);
           return nomem("ast2str(): op.push.arg: ");
+        }
         nesting[nestingLen-1]++;
       }
       // update indent
       if (!astrcat(&indent, &indentCap, &indentLen,
-                   nesting[nestingLen-1]>1 ? "+-" : "\\-", strlen("+-")))
+                   nesting[nestingLen-1]>1 ? "+-" : "\\-", strlen("+-"))) {
+        free_stack(s);
+        smartfree(result, tmp, indent, nesting);
         return nomem("ast2str(): op.indent: ");
+      }
       break;
     default:
       fprintf(stderr, "unrecognized node type\n");
       break;
     }
   }
+  free_stack(s);
   free(nesting);
   free(indent);
   free(tmp);
   // caller must free(result)
-  free_stack(s);
   return result;
 }

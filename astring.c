@@ -62,3 +62,11 @@ void odstr(char *s) {
   fprintf(stderr, "\n");
 }
 
+void _smartfree(int n, ...) {
+  va_list ptrs;
+  va_start(ptrs, n);
+  for (int i = 0; i < n; i++) {
+    void *ptr = va_arg(ptrs, void *);
+    if (ptr != NULL) free(ptr);
+  }
+}
