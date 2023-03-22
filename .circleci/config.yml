@@ -10,8 +10,7 @@ jobs:
           name: Install SonarCloud C dependencies
           command: |
             set -ex
-            sudo mkdir -p /bw/out
-            sudo chown -R $USER:$USER /bw
+            mkdir -p /bw/out
             cd /bw
             curl -L https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
             unzip build-wrapper-linux-x86.zip
