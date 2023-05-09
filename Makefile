@@ -20,10 +20,15 @@ ast.o: astring.o
 lex.yy.c: rpn.l
 	flex $<
 
+test: testAst
+	./testAst test1.ast
+
+testAst: testAst.o
+
 clean:
 	rm -f *.o
 	rm -f *.tab.c *.tab.h
 	rm -f *.yy.c
 	rm -f $(PROJ)
 
-.PHONY: clean
+.PHONY: clean test all

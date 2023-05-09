@@ -1,6 +1,9 @@
 .DS_Store
+
+# Build products
 *.o
 *.tab.c
 *.tab.h
 *.yy.c
 rpn
+testAst
