@@ -61,10 +61,10 @@ size_t getline1(char *s, size_t n, FILE *f) {
   return 0;
 }
 
-/* getuntil() reads from the current position in the provided file and writes
- * the subsequent data to s until it encounters either a line equal to tok or
- * the EOF, whichever comes first. The token string may be followed by either a
- * newline in the file data or the EOF; it will still be considered a line.
+/* fgetuntil() reads from the current position in the provided file and writes
+ * bytes to s until it encounters either a line equal to tok or the EOF,
+ * whichever comes first. To be matched, the token string must be followed, in
+ * the file data, by either a newline or the EOF.
  *
  * If n (the size of s) is not large enough to hold all the data, n-1 bytes
  * will be written followed by a \0, and n will be the return value.
@@ -76,7 +76,7 @@ size_t getline1(char *s, size_t n, FILE *f) {
  * If any error occurs, returns 0. Otherwise, s is guaranteed to contain a \0
  * byte.
  */
-size_t getuntil(char *s, size_t n, char *tok, size_t toksize, FILE *f) {
+size_t fgetuntil(char *s, size_t n, char *tok, size_t toksize, FILE *f) {
   size_t i, lineLen;
   int lineInProgress;
 
@@ -115,17 +115,128 @@ size_t getuntil(char *s, size_t n, char *tok, size_t toksize, FILE *f) {
   return i;
 }
 
-int testPrint(char* fpath) {
-  FILE *f;
+/* fskipuntil() moves the cursor of f to either the first char after the first
+ * complete line(s) equal to tok, or to the EOF, whichever comes first. If tok
+ * is found, returns 1, else returns 0. A line is allowed to end with the EOF
+ * or a \n.
+ *
+ * Assumes that f is already cued to the beginning of a line.
+ *
+ * tok is allowed to contain \n, in which case this token matcher will
+ * backtrack in the file as needed (though never prior to the initial cursor
+ * position) to ensure every line start it encounters is checked for a match.
+ */
+int fskipuntil(char *tok, FILE *f) {
+  fpos_t bookmark; // in case of \n in tok, for retrying match from second line
+                   // encountered during partial match
+  char isBookmark = 0;
+  size_t i = 0; // index within tok
+  char isLineStart = 1;
+  int c = '\0';
+  char tokc; // tok[i]
+
+  while (1) {
+    c = fgetc(f);
+    tokc = tok[i];
+    if (!tokc && (c == '\n' || c == EOF)) { // end of tok and EOL
+      return 1;
+    }
+    if (c == EOF) {
+      return 0;
+    }
+    if (!tokc || c != tokc) { // end of tok and not EOL or EOF, or mismatch
+                              // reset match until next isLineStart
+      i = 0;
+      if (isBookmark) {
+        fsetpos(f, &bookmark);
+        isBookmark = 0;
+      }
+    } else if (i) { // not first of tok and match continues
+      i++;
+    } else if (isLineStart && c == tok[0]) { // only start match if isLineStart
+      i = 1;
+    }
+    isLineStart = c == '\n';
+    if (isLineStart && i && !bookmark) {
+      fgetpos(f, &bookmark);
+      isBookmark = 1;
+    }
+  }
+}
+
+/* fnskipuntil() moves the cursor of f to either the first char after the first
+ * complete line(s) equal to tok up to n-1 chars where index n-1 is treated as
+ * \0, or to the EOF, whichever comes first. If tok is found, returns 1, else
+ * returns 0. A line is allowed to end with the EOF or a \n.
+ *
+ * Assumes that f is already cued to the beginning of a line.
+ *
+ * tok is allowed to contain \n, in which case this token matcher will
+ * backtrack in the file as needed (though never prior to the initial cursor
+ * position) to ensure every line start it encounters is checked for a match.
+ */
+int fnskipuntil(char *tok, size_t n, FILE *f) {
+  fpos_t bookmark; // in case of \n in tok, for retrying match from second line
+                   // encountered during partial match
+  char isBookmark = 0;
+  size_t i = 0; // index within tok
+  size_t n1 = n-1;
+  char isLineStart = 1;
+  int c = '\0';
+  char tokc; // tok[i]
+  char isEOT; // end of tok
+
+  while (1) {
+    c = fgetc(f);
+    isEOT = i >= n1 || !(tokc = tok[i]);
+    if (isEOT && (c == '\n' || c == EOF)) { // end of tok and EOL
+      return 1;
+    }
+    if (c == EOF) {
+      return 0;
+    }
+    if (isEOT || c != tokc) { // end of tok, and not EOL or EOF, or mismatch
+                              // reset match until next isLineStart
+      i = 0;
+      if (isBookmark) {
+        fsetpos(f, &bookmark);
+        isBookmark = 0;
+      }
+    } else if (i) { // not first of tok and match continues
+      i++;
+    } else if (isLineStart && c == tok[0]) { // only start match if isLineStart
+      i = 1;
+    }
+    isLineStart = c == '\n';
+    if (isLineStart && i && !bookmark) {
+      fgetpos(f, &bookmark);
+      isBookmark = 1;
+    }
+  }
+}
+
+/* testPrint() uses getline1 to retrieve lines, labeling each slurp into buf
+ * with however many bytes arrived, and whether \n, EOF, or the sizeof(buf)
+ * terminated the slurp.
+ */
+int testPrint(FILE* f) {
   char buf[256];
   size_t n;
 
-  f = fopen(fpath, "r");
   if (f == 0) {
     fprintf(stderr, "error: failed to read current dir\n");
     return 1;
   }
-  while ( 0<(n=getline1((char *)buf, sizeof(buf), f)) ) {
+  while (1) {
+    n = getline1((char *)buf, sizeof(buf), f);
+    if (!n) {
+      fprintf(stderr, "error: n==0\n");
+      break;
+    } else if (n == EOF) {
+      printf("EOF\n");
+      break;
+    }
+
     if (buf[n-1] == '\n') {
       printf("%2zu: %s", n, buf);
     } else {
@@ -135,10 +246,9 @@ int testPrint(char* fpath) {
   return 0;
 }
 
-#define INPUT_TOK "### INPUT\n"
-#define EXPECT_TOK "### EXPECT\n"
-#define INPUTLEN_MIN (sizeof(INPUT_TOK) > sizeof(EXPECT_TOK) ? sizeof(INPUT_TOK) : sizeof(EXPECT_TOK))
-int parseTest(
+#define INPUT_TOK "### INPUT"
+#define EXPECT_TOK "### EXPECT"
+char parseTest(
   char* input,
   size_t* inputLen,
   char* fpath
@@ -160,52 +270,13 @@ int parseTest(
     return 1;
   }
 
+  fnskipuntil(INPUT_TOK, sizeof(INPUT_TOK), f);
   input[0] = '\0';
-  n = 0; // index of \0
-  lineInProgress = 0;
-  mode = 0;
-  for(;;) {
-    lineLen = getline1(&input[n], *inputLen-n, f);
-    if (lineLen == EOF) {
-      fprintf(stderr, "error: unexpected EOF\n");
-      fclose(f);
-      return 1;
-    } else if (lineLen == 0) {
-      fprintf(stderr, "error: args to getline1(&input[%zu], %zu, <%s>)\n",
-        n, *inputLen-n, fpath);
-      fclose(f);
-      return 1;
-    }
-
-    if (mode == 0) { // discard until INPUT token
-      if (!lineInProgress && !strcmp(&input[n], INPUT_TOK)) {
-        mode = 1;
-      }
-    } else if (mode == 1) { // write to input
-      if (*inputLen-n > lineLen) {
-        if (!lineInProgress && !strcmp(&input[n], EXPECT_TOK)) {
-          input[n] = '\0';
-          break;
-        } else {
-          n += lineLen;
-        }
-      } else {
-        n = *inputLen-1;
-        mode = 2;
-      }
-    } else if (mode == 2) { // discard unstoreable INPUT
-      if (!lineInProgress && !strcmp(&input[n], EXPECT_TOK)) {
-        break;
-      }
-    }
-
-    lineInProgress = input[lineLen-1] != '\n';
-  }
-  /* printf("\nFound EXPECT\n"); */
-  /* printf("\nFile cursor at EXPECT data\n"); */
-  *inputLen = n;
+  *inputLen = fgetuntil(input, *inputLen, EXPECT_TOK, sizeof(EXPECT_TOK), f);
   printf("input[%zu]: [%s]\n", *inputLen, input);
+  testPrint(f);
   fclose(f);
+  /* return !*inputLen; */
   return 0;
 }
 
