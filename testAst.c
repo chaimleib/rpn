@@ -115,6 +115,100 @@ size_t fgetuntil(char *s, size_t n, char *tok, size_t toksize, FILE *f) {
   return i;
 }
 
+/* fngetuntil() writes chars from f to s until the first of the following:
+ *   * a complete line or lines matching tok (up until tokn) are found, or
+ *   * n chars are written to s (including the \0), or
+ *   * we reach the EOF.
+ *
+ * The terminating tok is not written to s. The number of chars written to s,
+ * including the trailing \0 or \n\0, overwrites n; 0 chars written indicates
+ * an error. The cursor of f is left at the first char of the line following
+ * tok, or if tok was not found, wherever we stopped writing chars to s.
+ *
+ * We return 1 if tok was found, else 2 if EOF was found, else 3 if we got cut
+ * off by the n-char limit, and 0 if there is an error. If we return nonzero, s
+ * is guaranteed to contain a \0.
+ *
+ * isLineStart should be 0 if f's cursor does not point to the beginning of a
+ * line. Otherwise, isLineStart should be non-zero. This is useful if n is not
+ * large enough to fit a complete line, and you are calling fngetuntil() in a
+ * loop.
+ *
+ * tok is allowed to contain a \n for multiline matches.
+ *
+ * s must not be smaller than n chars. n must be greater than 0, to hold at
+ * least the \0 byte.
+ *
+ * tok must not be smaller than tokn chars. tokn must be greater than 0, to
+ * hold at least the \0 byte, indicating an empty line.
+ */
+char fngetuntil(char *s, size_t *n, char *tok, size_t tokn, char isLineStart, FILE *f) {
+  fpos_t tokStart; // Once we begin a match, we stop writing chars to s. If the
+                   // match does not complete, we use this fpos_t to go back
+                   // and grab the chars we weren't sure about.
+  size_t i = 0; // index within tok
+  const size_t n1 = *n-1;
+  const size_t tokn1 = tokn-1;
+  int c; // fgetc(f)
+  char tokc; // tok[i]
+  char isEOT; // end of tok
+  char isEOF;
+  size_t sEnd = 0; // index of \0 in s
+  char retval;
+
+  if (*n <= 0 || tokn <= 0) {
+    return 0;
+  }
+
+  while (1) {
+    c = fgetc(f);
+    isEOT = i >= tokn1 || !(tokc = tok[i]);
+    isEOF = c == EOF;
+
+    retval = 0;
+    // end of tok and either EOL or EOF
+    if (isEOT && (c == '\n' || isEOF)) {
+      retval = 1;
+    // not in match
+    } else if (!i) {
+      if (isEOF) {
+        retval = 2;
+      // only start match if isLineStart
+      } else if (isLineStart && c == tok[0]) {
+        i = 1;
+        fgetpos(f, &tokStart);
+      // reached n chars, including \0
+      } else if (sEnd >= n1) {
+        ungetc(c, f);
+        retval = 3;
+      // not matching tok right now
+      } else {
+        s[sEnd++] = c;
+      }
+    // end of tok (and not EOL or EOF, above), or mismatch, or EOF inside
+    // match-in-progress
+    } else if (isEOT || c != tokc || isEOF) {
+      // reset match until next isLineStart
+      i = 0;
+      fsetpos(f, &tokStart);
+      // fake value that is not \n, so that we don't set isLineStart and start
+      // a new match. Unlike fskipuntil(), we're not jumping to nextTryMark,
+      // since we need to iterate over missed chars to write them to s.
+      c = 'x';
+    // not first of tok and match continues
+    } else {
+      i++;
+    }
+    if (retval) {
+      s[sEnd] = '\0';
+      *n = sEnd+1;
+      return retval;
+    }
+
+    isLineStart = c == '\n';
+  }
+}
+
 /* fskipuntil() moves the cursor of f to either the first char after the first
  * complete line(s) equal to tok, or to the EOF, whichever comes first. If tok
  * is found, returns 1, else returns 0. A line is allowed to end with the EOF
@@ -219,28 +313,26 @@ int fnskipuntil(char *tok, size_t n, FILE *f) {
  * with however many bytes arrived, and whether \n, EOF, or the sizeof(buf)
  * terminated the slurp.
  */
-int testPrint(FILE* f) {
-  char buf[256];
-  size_t n;
-
-  if (f == 0) {
+int testPrint(char *buf, size_t n, FILE* f) {
+  size_t slurpLen;
+  if (!f) {
     fprintf(stderr, "error: failed to read current dir\n");
     return 1;
   }
   while (1) {
-    n = getline1((char *)buf, sizeof(buf), f);
-    if (!n) {
-      fprintf(stderr, "error: n==0\n");
+    slurpLen = getline1(buf, n, f);
+    if (!slurpLen) {
+      fprintf(stderr, "error: slurpLen==0\n");
       break;
-    } else if (n == EOF) {
+    } else if (slurpLen == EOF) {
       printf("EOF\n");
       break;
     }
 
-    if (buf[n-1] == '\n') {
-      printf("%2zu: %s", n, buf);
+    if (buf[slurpLen-1] == '\n') {
+      printf("%2zu: [%s]", slurpLen, buf);
     } else {
-      printf("%2zu: %s\n[-\\n]\n", n, buf);
+      printf("%2zu: [%s]-\\n\n", slurpLen, buf);
     }
   }
   return 0;
@@ -249,19 +341,14 @@ int testPrint(FILE* f) {
 #define INPUT_TOK "### INPUT"
 #define EXPECT_TOK "### EXPECT"
 char parseTest(
-  char* input,
-  size_t* inputLen,
+  char* buf,
+  size_t* n,
   char* fpath
 ) {
   FILE *f;
-  /* modes:
-   * 0: looking for "### INPUT"
-   * 1: reading "### INPUT"
-   * 2: discarding remainder of ### INPUT
-   * end: f is at line after "### EXPECT" or EOF
-   */
-  size_t n, lineLen;
-  int lineInProgress, mode;
+  char status, isLineStart;
+  const size_t cap = *n;
+  size_t slurpLen;
 
   printf("Reading %s...\n", fpath);
   f = fopen(fpath, "r");
@@ -271,12 +358,20 @@ char parseTest(
   }
 
   fnskipuntil(INPUT_TOK, sizeof(INPUT_TOK), f);
-  input[0] = '\0';
-  *inputLen = fgetuntil(input, *inputLen, EXPECT_TOK, sizeof(EXPECT_TOK), f);
-  printf("input[%zu]: [%s]\n", *inputLen, input);
-  testPrint(f);
+  buf[0] = '\0';
+  isLineStart = 1;
+  *n = 0;
+  do {
+    slurpLen = cap;
+    status = fngetuntil(
+        buf, &slurpLen, EXPECT_TOK, sizeof(EXPECT_TOK), isLineStart, f);
+    *n += slurpLen-1; // exclude \0
+    printf("buf[%zu], status %d: [%s]\n", slurpLen, status, buf);
+    isLineStart = buf[slurpLen-1] == '\n';
+  } while (status==3 && slurpLen);
+  ++*n; // for \0
+  testPrint(buf, cap, f);
   fclose(f);
-  /* return !*inputLen; */
   return 0;
 }
 
@@ -286,7 +381,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  char buf[256]; // large enough to hold line contents plus "### EXPECT\n"
+  char buf[32];
   size_t len = sizeof(buf);
   parseTest(buf, &len, argv[1]);
   return 0;

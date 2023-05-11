@@ -20,8 +20,8 @@ ast.o: astring.o
 lex.yy.c: rpn.l
 	flex $<
 
-test: testAst
-	./testAst test1.ast
+test: testAst test2.ast
+	./testAst test2.ast
 
 testAst: testAst.o
 
